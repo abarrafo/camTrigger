@@ -4,96 +4,92 @@
  * Author: Andrew Barraford
  * Date: 07/17/2017
  */
+ //Your ZoneMinder Server IP Address
+ byte server[] = { 192, 168, 1, 23 };
+ int port = 6802;
 
-byte server[] = { 192, 168, 1, 88 };
-//ZM telnet port
-int port = 6802;
-int cam9 = 0;
-TCPClient client;
+ //Camera id to monitor and to map to inputs
+ int cam9 = 0;
+ int cam10 = 0;
 
-void setup() {
-    Serial.begin(9600);
-    Particle.variable("analogSignal", &cam9, INT);
-    //Assign the pin as an input.
-    pinMode(A0, INPUT);
-      // if you get a connection, report back via serial:
-    if (client.connect(server, port)) {
-        Serial.printlnf("connected”);
-        Particle.publish("connected");
-    }
-    else {
-        // if you didn't get a connection to the server:
-        Serial.printlnf("connection failed”);
-        Particle.publish("connection failed");
-    }
-}
+ //Counters
+ int cam9CloseCnt = 0;
+ int cam10CloseCnt = 0;
+ int cam9OpenCnt = 0;
+ int cam10OpenCnt = 0;
 
-void loop() {
-    cam9 = analogRead(A0); // Get a reading
-    if (cam9 < 1000) {
-        Serial.printlnf("close %d", cam9;
-        delay(200);
-    } else {
-        Serial.printlnf("open %d, trigger camera and delay 60s", cam9);
+ //Is Trigger Eligible
+ bool cam9TriggerEligible = true;
+ bool cam10TriggerEligible = true;
 
-        //****************************************************************************
-        //****************************************************************************
-        // Send telnet command to trigger zoneminder to record on for 30s.
-        // Following /usr/bin/zmtrigger.pl readme:
+ //The TCP Client to send TELNET
+ TCPClient client;
 
-        // B<id>|B<action>|B<score>|B<cause>|B<text>|B<showtext>
-        // =item B<id> is the id number or name of the ZM monitor.
+ void setup() {
+     Serial.begin(9600);
+     Particle.variable("analogSignal", &cam9, INT);
+     Particle.variable("analogSignal", &cam10, INT);
 
-        // =item B<action>
-        //   Valid actions are 'on', 'off', 'cancel' or 'show' where
-        //   'on' forces an alarm condition on;
-        //   'off' forces an alarm condition off;
-        //   'cancel' negates the previous 'on' or 'off';
-        //   'show' updates the auxiliary text represented by the %Q
-        //   placeholder, which can optionally be added to the affected monitor's
-        //   timestamp label format.
+     //setup pin as input.
+     pinMode(A0, INPUT);
+     pinMode(A1, INPUT);
 
-        //   Ordinarily you would use 'on' and 'cancel', 'off' would tend to be
-        //   used to suppress motion based events. Additionally 'on' and 'off' can
-        //   take an additional time offset, e.g. on+20 which automatically
-        //   cancel's the previous action after that number of seconds.
+     if (client.connect(server, port)) {
+         //Publish to the Particl IO console. use sparyingly as pubs are limited to 1 per second.
+         Particle.publish("connected");
+         Serial.printlnf("connected to server");
+     }
+     else {
+         //Publish to the Particl IO console. use sparyingly as pubs are limited to 1 per second.
+         Particle.publish("connection failed");
+         Serial.printlnf("connection to server failed");
+     }
+ }
 
-        // =item B<score>
-        //   is the score given to the alarm, usually to indicate it's
-        //   importance. For 'on' triggers it should be non-zero, otherwise it should
-        //   be zero.
+ void loop() {
 
-        // =item B<cause>
-        //   is a 32 char max string indicating the reason for, or source of
-        //   the alarm e.g. 'Relay 1 open'. This is saved in the 'Cause' field of the
-        //   event. Ignored for 'off' or 'cancel' messages.
+     //Input mapping to cams
+     cam9 = analogRead(A0); // Get a reading
+     cam10 = analogRead(A1); // Get a reading
 
-        // =item B<text>
-        //   is a 256 char max additional info field, which is saved in the
-        //   'Description' field of an event. Ignored for 'off' or 'cancel' messages.
+     //Trigger and Dely CAM 10
+     if(cam10 < 1000 && cam10CloseCnt > 500){
+             Serial.printlnf("close cam10 %d", cam10);
+             cam10CloseCnt = 0;
+     }else if(cam10 > 1000 && cam10TriggerEligible) {
+         Serial.printlnf("open cam10 %d, trigger camera and delay 30s", cam10);
+         // client.print("10|on+30|1|motion|photon-triggered|photon-triggered");
+         cam10OpenCnt = 0;
+         cam10TriggerEligible = false;
+     }
 
-        // =item B<showtext>
-        //   is up to 32 characters of text that can be displayed in the
-        //   timestamp that is added to images. The 'show' action is designed to
-        //   update this text without affecting alarms but the text is updated, if
-        //   present, for any of the actions. This is designed to allow external input
-        //   to appear on the images captured, for instance temperature or personnel
-        //   identity etc.
 
-        // =back
-        // Note that multiple messages can be sent at once and should be LF or CRLF
-        // delimited. This script is not necessarily intended to be a solution in
-        // itself, but is intended to be used as 'glue' to help ZoneMinder interface
-        // with other systems.
+     //Increment cam 10 counters
+     cam10CloseCnt++;
+     cam10OpenCnt++;
 
-        // EXAMPLE 3|on+10|1|motion|text|showtext
-        // Triggers "alarm" on camera #3 for 10 seconds with score=1, cause="motion".
-        //****************************************************************************
-        //****************************************************************************
-        //Trigger my camera 9 to record for 30s, delay triggers for 30s
+     if(!cam10TriggerEligible && cam10OpenCnt > 30000) {
+         cam10TriggerEligible = true;
+     }
 
-        //un-comment to trigger cam 9
-        //client.print("9|on+30|1|motion|photon-triggered|photon-triggered");
-        delay(30000);
-    }
-}
+
+     //Trigger and delay for cam 9
+     if(cam9 < 1000 && cam9CloseCnt > 500) {
+         Serial.printlnf("close cam9 %d", cam9);
+         cam9CloseCnt = 0;
+     }else if (cam9 > 1000 && cam9TriggerEligible){
+         Serial.printlnf("open cam9 %d, trigger camera and delay 30s", cam9);
+         // client.print("9|on+30|1|motion|photon-triggered|photon-triggered");
+         cam9OpenCnt = 0;
+         cam9TriggerEligible = false;
+     }
+
+     //Increment counters for CAM 9
+     cam9CloseCnt++;
+     cam9OpenCnt++;
+
+     if(!cam9TriggerEligible && cam9OpenCnt > 30000) {
+         cam9TriggerEligible = true;
+     }
+
+ }
